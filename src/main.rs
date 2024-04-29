@@ -33,6 +33,22 @@ async fn index() -> Result<NamedFile, std::io::Error> {
     NamedFile::open("wwwroot/index.html").await
 }
 
+#[get("/")]
+async fn get_all_contacts(contacts: &State<Arc<Mutex<ContactsStore>>>) -> Json<Vec<Contact>> {
+    let local_store = contacts.lock().unwrap();
+    let result: Vec<Contact> = local_store
+        .contacts
+        .clone()
+        .into_iter()
+        .map(|x| {
+            let (_, y) = x;
+            return y;
+        })
+        .collect();
+
+    return Json(result);
+}
+
 #[get("/<id>")]
 async fn get_contact(
     contacts: &State<Arc<Mutex<ContactsStore>>>,
@@ -150,6 +166,12 @@ fn rocket() -> _ {
         .mount("/", routes![index])
         .mount(
             "/api",
-            routes![get_contact, create_contact, update_contact, delete_contact],
+            routes![
+                get_all_contacts,
+                get_contact,
+                create_contact,
+                update_contact,
+                delete_contact
+            ],
         )
 }

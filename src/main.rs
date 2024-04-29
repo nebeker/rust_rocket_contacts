@@ -91,6 +91,35 @@ async fn add_contact(
     Ok(contact)
 }
 
+#[post("/<id>", format = "json", data = "<updated_contact>")]
+async fn update_contact(
+    contacts: &State<Arc<Mutex<ContactsStore>>>,
+    id: i32,
+    updated_contact: Json<Contact>,
+) -> Result<Json<Contact>, Status> {
+    if let Ok(contact) = edit_contact(contacts, id, updated_contact).await {
+        Ok(Json(contact))
+    } else {
+        Err(Status::NoContent)
+    }
+}
+
+async fn edit_contact(
+    contacts: &State<Arc<Mutex<ContactsStore>>>,
+    id: i32,
+    updated_contact: Json<Contact>,
+) -> Result<Contact, rocket::response::status::NoContent> {
+    let mut local_store = contacts.lock().unwrap();
+    let mut contact = updated_contact.into_inner();
+
+    if let Some(_) = local_store.contacts.get_mut(&id) {
+        contact.id = Some(id);
+        local_store.contacts.insert(id, contact.clone());
+        return Ok(contact);
+    }
+    Err(rocket::response::status::NoContent)
+}
+
 #[delete("/<id>")]
 async fn delete_contact(
     contacts: &State<Arc<Mutex<ContactsStore>>>,
@@ -119,5 +148,8 @@ fn rocket() -> _ {
     rocket::build()
         .manage(Arc::new(Mutex::new(ContactsStore::new())))
         .mount("/", routes![index])
-        .mount("/api", routes![get_contact, create_contact, delete_contact])
+        .mount(
+            "/api",
+            routes![get_contact, create_contact, update_contact, delete_contact],
+        )
 }

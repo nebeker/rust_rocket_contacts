@@ -3,7 +3,7 @@ extern crate rocket;
 
 use rocket::fs::NamedFile;
 use rocket::response::status::NoContent;
-use rocket::serde::{json::Json, Serialize};
+use rocket::serde::{json::Json, Deserialize, Serialize};
 use rocket::State;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -20,10 +20,10 @@ impl ContactsStore {
     }
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(crate = "rocket::serde")]
 struct Contact {
-    id: i32,
+    id: Option<i32>,
     name: String,
     email: String,
 }
@@ -58,10 +58,44 @@ async fn contact_from_id(
     }
 }
 
+#[post("/", format = "json", data = "<new_contact>")]
+async fn create_contact(
+    contacts: &State<Arc<Mutex<ContactsStore>>>,
+    new_contact: Json<Contact>,
+) -> Result<Json<Contact>, rocket::response::status::NoContent> {
+    if let Ok(contact) = add_contact(contacts, new_contact).await {
+        Ok(Json(contact))
+    } else {
+        Err(NoContent)
+    }
+}
+
+async fn add_contact(
+    contacts: &State<Arc<Mutex<ContactsStore>>>,
+    new_contact: Json<Contact>,
+) -> Result<Contact, rocket::response::status::NoContent> {
+    let mut local_store = contacts.lock().unwrap();
+    let mut contact = new_contact.into_inner();
+
+    let new_id: i32;
+
+    let max_id = local_store.contacts.keys().into_iter().max();
+    match max_id {
+        Some(value) => new_id = value + 1,
+        None => new_id = 1,
+    }
+
+    contact.id = Some(new_id);
+
+    local_store.contacts.insert(new_id, contact.clone());
+
+    Ok(contact)
+}
+
 #[launch]
 fn rocket() -> _ {
     rocket::build()
         .manage(Arc::new(Mutex::new(ContactsStore::new())))
         .mount("/", routes![index])
-        .mount("/api", routes![get_contact])
+        .mount("/api", routes![get_contact, create_contact])
 }

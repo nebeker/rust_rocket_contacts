@@ -2,7 +2,7 @@
 extern crate rocket;
 
 use rocket::fs::NamedFile;
-use rocket::response::status::NoContent;
+use rocket::http::Status;
 use rocket::serde::{json::Json, Deserialize, Serialize};
 use rocket::State;
 use std::collections::HashMap;
@@ -34,27 +34,26 @@ async fn index() -> Result<NamedFile, std::io::Error> {
 }
 
 #[get("/<id>")]
-
 async fn get_contact(
     contacts: &State<Arc<Mutex<ContactsStore>>>,
     id: i32,
-) -> Result<Json<Contact>, rocket::response::status::NoContent> {
+) -> Result<Json<Contact>, Status> {
     if let Ok(contact) = contact_from_id(contacts, id).await {
         Ok(Json(contact))
     } else {
-        Err(NoContent)
+        Err(Status::NoContent)
     }
 }
 
 async fn contact_from_id(
     contacts: &State<Arc<Mutex<ContactsStore>>>,
     id: i32,
-) -> Result<Contact, rocket::response::status::NoContent> {
+) -> Result<Contact, Status> {
     let local_store = contacts.lock().unwrap();
     let query = local_store.contacts.get(&id);
     match query {
         Some(&ref contact) => Ok(contact.clone()),
-        None => Err(rocket::response::status::NoContent),
+        None => Err(Status::NoContent),
     }
 }
 
@@ -62,11 +61,11 @@ async fn contact_from_id(
 async fn create_contact(
     contacts: &State<Arc<Mutex<ContactsStore>>>,
     new_contact: Json<Contact>,
-) -> Result<Json<Contact>, rocket::response::status::NoContent> {
+) -> Result<Json<Contact>, Status> {
     if let Ok(contact) = add_contact(contacts, new_contact).await {
         Ok(Json(contact))
     } else {
-        Err(NoContent)
+        Err(Status::NoContent)
     }
 }
 
@@ -92,10 +91,33 @@ async fn add_contact(
     Ok(contact)
 }
 
+#[delete("/<id>")]
+async fn delete_contact(
+    contacts: &State<Arc<Mutex<ContactsStore>>>,
+    id: i32,
+) -> rocket::http::Status {
+    let result = remove_contact(contacts, id).await;
+
+    match result {
+        Ok(_) => Status::Ok,
+        Err(_) => Status::NotFound,
+    }
+}
+
+async fn remove_contact(contacts: &State<Arc<Mutex<ContactsStore>>>, id: i32) -> Result<(), ()> {
+    let mut local_store = contacts.lock().unwrap();
+
+    let result = local_store.contacts.remove(&id);
+    match result {
+        Some(_) => Ok(()),
+        None => Err(()),
+    }
+}
+
 #[launch]
 fn rocket() -> _ {
     rocket::build()
         .manage(Arc::new(Mutex::new(ContactsStore::new())))
         .mount("/", routes![index])
-        .mount("/api", routes![get_contact, create_contact])
+        .mount("/api", routes![get_contact, create_contact, delete_contact])
 }
